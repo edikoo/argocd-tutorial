@@ -1,0 +1,111 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: docker-build-
+spec:
+  entrypoint: build-project
+  artifactRepositoryRef:
+    configMap: ediko-artifact-repository
+  ttlStrategy:
+    secondsAfterSuccess: 0
+#    secondsAfterFailure: 0
+#    secondsAfterCompletion: 0
+  arguments:
+    parameters:
+      - name: repo_url
+        value: "https://USERNAME:ACCESS_TOKEN@github.com/edikoo/argocd-tutorial.git"
+      - name: revision
+        value: "main"
+      - name: image_name
+        value: "edi.crocobet.ro:5005/myapp"
+
+  templates:
+    - name: build-project
+      dag:
+        tasks:
+          - name: clone
+            template: git-clone
+
+          - name: build-and-push
+            template: build-docker-image
+            dependencies: [clone]
+            arguments:
+              artifacts:
+                - name: git-dir
+                  from: "{{tasks.clone.outputs.artifacts.source}}"
+          - name: modify-manifest
+            template: modify-manifest
+            dependencies: [clone, build-and-push]
+            arguments:
+              artifacts:
+                - name: project
+                  from: "{{tasks.clone.outputs.artifacts.source}}"
+
+
+    - name: git-clone
+      outputs:
+        artifacts:
+          - name: source
+            path: /workspace/app
+      container:
+        image: alpine/git:2.45.2
+        command: [sh, -c]
+        args:
+          - |
+            set -e
+            git clone --depth=1 --branch "{{workflow.parameters.revision}}" "{{workflow.parameters.repo_url}}" /workspace/app
+
+
+    - name: build-docker-image
+      inputs:
+        artifacts:
+          - name: git-dir
+            path: /workspace/app
+      container:
+        image: gcr.io/kaniko-project/executor:v1.23.2
+        workingDir: /workspace/app/v17-combining-argo-tools/app/
+        args:
+          - --context=/workspace/app/v17-combining-argo-tools/app/
+          - --dockerfile=/workspace/app/v17-combining-argo-tools/app/Dockerfile
+          - --destination={{workflow.parameters.image_name}}:{{workflow.uid}}
+          - --verbosity=info
+          # Uncomment if registry is self-signed:
+          - --skip-tls-verify
+          - --insecure
+        volumeMounts:
+          - name: docker-config
+            mountPath: /kaniko/.docker
+      volumes:
+        - name: docker-config
+          secret:
+            secretName: docker-config-json
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+
+      podSpecPatch: |
+        hostAliases:
+        - ip: "10.0.10.96"
+          hostnames:
+          - "edi.crocobet.ro"
+
+
+
+    - name: modify-manifest
+      inputs:
+        artifacts:
+          - name: project
+            path: /workspace/app
+      script:
+        image: alpine/git
+        workingDir: /workspace/app/v17-combining-argo-tools/argo-rollouts
+        command: [sh]
+        source: |
+          NEW_IMAGE="{{workflow.parameters.image_name}}:{{workflow.uid}}"
+          sed -i -e "s|^\([[:space:]]*image:[[:space:]]*\).*|\1${NEW_IMAGE}|" nginx-rollouts.yml
+          grep -n 'image:' -n nginx-rollouts.yml && echo "Updated to: $NEW_IMAGE"
+          git config user.name "edikoo"
+          git -C "$ROOT" config user.email "${GIT_COMMIT_EMAIL}"
+          git add .
+          git commit -m "image.tag has been changed to {{workflow.uid}}"
+          git push origin {{workflow.parameters.revision}}
