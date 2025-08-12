@@ -23,6 +23,10 @@ spec:
       labels:
         app: nginx-rollouts
     spec:
+      hostAliases:
+        - ip: "10.0.10.96"
+          hostnames:
+            - "edi.crocobet.ro"
       containers:
       - name: nginx-rollouts
         image: edi.crocobet.ro:5005/myapp/nginx:0cd4cd34-3360-491d-9353-3c69b95f5cff
