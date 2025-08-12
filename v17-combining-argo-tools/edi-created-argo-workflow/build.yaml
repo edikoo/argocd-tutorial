@@ -6,6 +6,8 @@ spec:
   entrypoint: build-project
   artifactRepositoryRef:
     configMap: ediko-artifact-repository
+  artifactGC:
+    strategy: OnWorkflowCompletion   # or: OnWorkflowDeletion Delete artifacts from minio
   ttlStrategy:
     secondsAfterSuccess: 0
 #    secondsAfterFailure: 0
