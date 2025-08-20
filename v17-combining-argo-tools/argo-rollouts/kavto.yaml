@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: nginx-rollouts
-        image: edi.crocobet.ro:5005/myapp:c2887cfc-e88e-4d4e-b937-a4a5b57fad18
+        image: edi.crocobet.ro:5005/myapp:6bd6b830-84dd-4ffd-b13f-3de0b960ef38
         ports:
         - containerPort: 80
 
